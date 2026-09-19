@@ -39,6 +39,10 @@ import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.cast.CastPlayer
+import com.google.android.gms.cast.framework.CastContext
+import androidx.mediarouter.app.MediaRouteButton
+import com.google.android.gms.cast.framework.CastButtonFactory
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.session.MediaSession
@@ -121,7 +125,9 @@ class PlayerMobileFragment : Fragment() {
     private val database by lazy { AppDatabase.getInstance(requireContext()) }
     private val viewModel by viewModelsFactory { PlayerViewModel(args.videoType, args.id) }
 
-    private lateinit var player: ExoPlayer
+    private lateinit var player: Player
+    private var castPlayer: CastPlayer? = null
+    private lateinit var exoPlayer: ExoPlayer
     private lateinit var httpDataSource: HttpDataSource.Factory
     private lateinit var dataSourceFactory: DataSource.Factory
     private lateinit var mediaSession: MediaSession
@@ -268,7 +274,23 @@ class PlayerMobileFragment : Fragment() {
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
+                super.onViewCreated(view, savedInstanceState)
+        try {
+            val castContext = CastContext.getSharedInstance(requireContext())
+            castPlayer = CastPlayer(castContext)
+            com.google.android.gms.cast.framework.CastButtonFactory.setUpMediaRouteButton(requireContext(), binding.pvPlayer.controller.binding.btnExoCast)
+            
+            castPlayer?.addListener(object : Player.Listener {
+                override fun onPlaybackStateChanged(state: Int) {
+                    if (state == Player.STATE_READY) {
+                        player = castPlayer!!
+                        binding.pvPlayer.player = player
+                    }
+                }
+            })
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
         initializePlayer(false)
         initializeVideo()
         gestureHelper = PlayerGestureHelper(
@@ -1188,7 +1210,7 @@ class PlayerMobileFragment : Fragment() {
     }
 
 
-    private fun ExoPlayer.hasStarted(): Boolean {
+    private fun Player.hasStarted(): Boolean {
         return (this.currentPosition > (this.duration * 0.005) || this.currentPosition > 20.seconds.inWholeMilliseconds)
     }
 
@@ -1251,11 +1273,11 @@ class PlayerMobileFragment : Fragment() {
         }
     }
 
-    private fun ExoPlayer.hasFinished(): Boolean {
+    private fun Player.hasFinished(): Boolean {
         return (this.currentPosition > (this.duration * 0.90))
     }
 
-    private fun ExoPlayer.hasReallyFinished(): Boolean {
+    private fun Player.hasReallyFinished(): Boolean {
         return this.duration > 0 &&
                 this.currentPosition >= (this.duration - UserPreferences.autoplayBuffer * 1000)
     }
@@ -1526,7 +1548,9 @@ class PlayerMobileFragment : Fragment() {
 
         dataSourceFactory = DefaultDataSource.Factory(requireContext(), httpDataSource)
 
-        player = buildPlayer(extraBuffering).also { player ->
+        exoPlayer = buildPlayer(extraBuffering).also { exoP ->
+            this.player = exoP
+            val player = exoP
                 player.setAudioAttributes(
                     AudioAttributes.Builder()
                         .setUsage(C.USAGE_MEDIA)
@@ -1547,7 +1571,7 @@ class PlayerMobileFragment : Fragment() {
             }
 
         binding.pvPlayer.player = player
-        binding.settings.player = player
+        binding.settings.player = exoPlayer
         binding.settings.subtitleView = binding.pvPlayer.subtitleView
         binding.settings.onSubtitlesClicked = {
             viewModel.getSubtitles(args.videoType)

@@ -63,14 +63,25 @@
         android:id="@+id/btn_exo_external_player"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginEnd="16dp"
+        android:layout_marginEnd="8dp"
         android:padding="8dp"
         android:src="@drawable/exo_styled_controls_external_player"
         android:tint="#FFFFFF"
         app:layout_constraintBottom_toBottomOf="@id/tv_exo_subtitle"
-        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintEnd_toStartOf="@id/btn_exo_cast"
         app:layout_constraintTop_toTopOf="@id/tv_exo_title"
         tools:ignore="ContentDescription,UseAppTint" />
+
+    <androidx.mediarouter.app.MediaRouteButton
+        android:id="@+id/btn_exo_cast"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="16dp"
+        android:padding="8dp"
+        app:mediaRouteButtonTint="#FFFFFF"
+        app:layout_constraintBottom_toBottomOf="@id/tv_exo_subtitle"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="@id/tv_exo_title" />
 
     <LinearLayout
         android:id="@+id/exo_center_controls"
@@ -288,6 +299,6 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:visibility="visible"
-        app:constraint_referenced_ids="btn_exo_back,tv_exo_title,tv_exo_subtitle,btn_exo_external_player,exo_center_controls,exo_progress,exo_bottom_bar" />
+        app:constraint_referenced_ids="btn_exo_back,tv_exo_title,tv_exo_subtitle,btn_exo_external_player,btn_exo_cast,exo_center_controls,exo_progress,exo_bottom_bar" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
