@@ -290,7 +290,19 @@ class PlayerMobileFragment : Fragment() {
                     binding.pvPlayer.player = player
                     
                     if (exoPlayer.currentMediaItem != null) {
-                        castPlayer?.setMediaItem(exoPlayer.currentMediaItem!!, currentPosition)
+                        val currentItem = exoPlayer.currentMediaItem!!
+                        val mimeType = currentItem.localConfiguration?.mimeType ?: androidx.media3.common.MimeTypes.APPLICATION_M3U8
+                        
+                        val castMediaItem = currentItem.buildUpon()
+                            .setMimeType(if (mimeType == "application/x-mpegURL") androidx.media3.common.MimeTypes.APPLICATION_M3U8 else mimeType)
+                            .setMediaMetadata(
+                                androidx.media3.common.MediaMetadata.Builder()
+                                    .setTitle(exoPlayer.playlistMetadata.title ?: "StreamFlix")
+                                    .build()
+                            )
+                            .build()
+                        
+                        castPlayer?.setMediaItem(castMediaItem, currentPosition)
                         castPlayer?.prepare()
                         castPlayer?.playWhenReady = playWhenReady
                     }
