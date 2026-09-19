@@ -280,12 +280,33 @@ class PlayerMobileFragment : Fragment() {
             castPlayer = CastPlayer(castContext)
             com.google.android.gms.cast.framework.CastButtonFactory.setUpMediaRouteButton(requireContext(), binding.pvPlayer.controller.binding.btnExoCast)
             
-            castPlayer?.addListener(object : Player.Listener {
-                override fun onPlaybackStateChanged(state: Int) {
-                    if (state == Player.STATE_READY) {
-                        player = castPlayer!!
-                        binding.pvPlayer.player = player
+            castPlayer?.setSessionAvailabilityListener(object : androidx.media3.cast.SessionAvailabilityListener {
+                override fun onCastSessionAvailable() {
+                    val currentPosition = exoPlayer.currentPosition
+                    val playWhenReady = exoPlayer.playWhenReady
+                    exoPlayer.playWhenReady = false
+                    
+                    player = castPlayer!!
+                    binding.pvPlayer.player = player
+                    
+                    if (exoPlayer.currentMediaItem != null) {
+                        castPlayer?.setMediaItem(exoPlayer.currentMediaItem!!, currentPosition)
+                        castPlayer?.prepare()
+                        castPlayer?.playWhenReady = playWhenReady
                     }
+                }
+
+                override fun onCastSessionUnavailable() {
+                    val currentPosition = castPlayer?.currentPosition ?: 0L
+                    val playWhenReady = castPlayer?.playWhenReady ?: false
+                    castPlayer?.playWhenReady = false
+                    
+                    player = exoPlayer
+                    binding.pvPlayer.player = player
+                    
+                    exoPlayer.seekTo(currentPosition)
+                    exoPlayer.prepare()
+                    exoPlayer.playWhenReady = playWhenReady
                 }
             })
         } catch (e: Exception) {
