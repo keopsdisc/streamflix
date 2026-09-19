@@ -127,6 +127,7 @@ class PlayerMobileFragment : Fragment() {
 
     private lateinit var player: Player
     private var castPlayer: CastPlayer? = null
+    private var castProxyServer: com.streamflixreborn.streamflix.cast.CastProxyServer? = null
     private lateinit var exoPlayer: ExoPlayer
     private lateinit var httpDataSource: HttpDataSource.Factory
     private lateinit var dataSourceFactory: DataSource.Factory
@@ -291,9 +292,22 @@ class PlayerMobileFragment : Fragment() {
                     
                     if (exoPlayer.currentMediaItem != null) {
                         val currentItem = exoPlayer.currentMediaItem!!
+                        var uriString = currentItem.localConfiguration?.uri?.toString()
+                        
+                        if (uriString != null && currentVideo != null) {
+                            if (castProxyServer == null) {
+                                val headers = (currentVideo!!.headers ?: emptyMap()) + mapOf("User-Agent" to userAgent)
+                                castProxyServer = com.streamflixreborn.streamflix.cast.CastProxyServer(8080, headers)
+                                castProxyServer?.start()
+                            }
+                            val localIp = com.streamflixreborn.streamflix.cast.CastProxyServer.getLocalIpAddress() ?: "127.0.0.1"
+                            uriString = "http://" + localIp + ":8080/proxy?url=" + android.net.Uri.encode(uriString)
+                        }
+
                         val mimeType = currentItem.localConfiguration?.mimeType ?: androidx.media3.common.MimeTypes.APPLICATION_M3U8
                         
                         val castMediaItem = currentItem.buildUpon()
+                            .setUri(uriString)
                             .setMimeType(if (mimeType == "application/x-mpegURL") androidx.media3.common.MimeTypes.APPLICATION_M3U8 else mimeType)
                             .setMediaMetadata(
                                 androidx.media3.common.MediaMetadata.Builder()
@@ -301,6 +315,10 @@ class PlayerMobileFragment : Fragment() {
                                     .build()
                             )
                             .build()
+                            
+                        android.util.Log.e("CAST_DEBUG", "URI: ${castMediaItem.localConfiguration?.uri}")
+                        android.util.Log.e("CAST_DEBUG", "MimeType: ${castMediaItem.localConfiguration?.mimeType}")
+                        android.util.Log.e("CAST_DEBUG", "Title: ${castMediaItem.mediaMetadata.title}")
                         
                         castPlayer?.setMediaItem(castMediaItem, currentPosition)
                         castPlayer?.prepare()
@@ -309,6 +327,8 @@ class PlayerMobileFragment : Fragment() {
                 }
 
                 override fun onCastSessionUnavailable() {
+                    castProxyServer?.stop()
+                    castProxyServer = null
                     val currentPosition = castPlayer?.currentPosition ?: 0L
                     val playWhenReady = castPlayer?.playWhenReady ?: false
                     castPlayer?.playWhenReady = false
@@ -602,6 +622,8 @@ class PlayerMobileFragment : Fragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
+        castProxyServer?.stop()
+        castProxyServer = null
         nextEpisodePrefetchJob?.cancel()
         val window = requireActivity().window
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
