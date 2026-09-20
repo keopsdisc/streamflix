@@ -21,7 +21,7 @@ class CastOptionsProvider : OptionsProvider {
                 ),
                 intArrayOf(1, 2)
             )
-            .setTargetActivityClassName("com.streamflixreborn.streamflix.activities.main.MainActivity")
+            .setTargetActivityClassName("com.streamflixreborn.streamflix.activities.main.MainMobileActivity")
             .build()
 
         val mediaOptions = CastMediaOptions.Builder()

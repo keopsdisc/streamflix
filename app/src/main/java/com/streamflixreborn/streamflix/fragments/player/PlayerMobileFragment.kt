@@ -289,6 +289,7 @@ class PlayerMobileFragment : Fragment() {
                     
                     player = castPlayer!!
                     binding.pvPlayer.player = player
+                    binding.settings.player = exoPlayer
                     
                     if (exoPlayer.currentMediaItem != null) {
                         val currentItem = exoPlayer.currentMediaItem!!
@@ -298,10 +299,16 @@ class PlayerMobileFragment : Fragment() {
                             if (castProxyServer == null) {
                                 val headers = (currentVideo!!.headers ?: emptyMap()) + mapOf("User-Agent" to userAgent)
                                 castProxyServer = com.streamflixreborn.streamflix.cast.CastProxyServer(8080, headers)
-                                castProxyServer?.start()
+                                try {
+                                    castProxyServer?.start()
+                                    android.util.Log.e("CAST_DEBUG", "Proxy started on 8080")
+                                } catch (e: Exception) {
+                                    android.util.Log.e("CAST_DEBUG", "Proxy start failed", e)
+                                }
                             }
                             val localIp = com.streamflixreborn.streamflix.cast.CastProxyServer.getLocalIpAddress() ?: "127.0.0.1"
                             uriString = "http://" + localIp + ":8080/proxy?url=" + android.net.Uri.encode(uriString)
+                            android.util.Log.e("CAST_DEBUG", "Proxy URL is: $uriString")
                         }
 
                         val mimeType = currentItem.localConfiguration?.mimeType ?: androidx.media3.common.MimeTypes.APPLICATION_M3U8
@@ -335,6 +342,7 @@ class PlayerMobileFragment : Fragment() {
                     
                     player = exoPlayer
                     binding.pvPlayer.player = player
+                    binding.settings.player = exoPlayer
                     
                     exoPlayer.seekTo(currentPosition)
                     exoPlayer.prepare()
@@ -497,32 +505,50 @@ class PlayerMobileFragment : Fragment() {
                     is PlayerViewModel.SubtitleState.SuccessDownloadingOpenSubtitle -> {
                         val fileName = state.uri.getFileName(requireContext()) ?: state.uri.toString()
                         val currentPosition = player.currentPosition
-                        val currentSubtitleConfigurations = player.currentMediaItem?.localConfiguration?.subtitleConfigurations?.map {
+
+                        // Update ExoPlayer
+                        val exoSubtitleConfigs = exoPlayer.currentMediaItem?.localConfiguration?.subtitleConfigurations?.map {
                             MediaItem.SubtitleConfiguration.Builder(it.uri)
-                                .setMimeType(it.mimeType)
-                                .setLabel(it.label)
-                                .setLanguage(it.language)
-                                .setSelectionFlags(0)
-                                .build()
+                                .setMimeType(it.mimeType).setLabel(it.label).setLanguage(it.language).setSelectionFlags(0).build()
                         } ?: listOf()
-                        player.setMediaItem(
-                            MediaItem.Builder()
-                                .setUri(player.currentMediaItem?.localConfiguration?.uri)
-                                .setMimeType(player.currentMediaItem?.localConfiguration?.mimeType)
-                                .setSubtitleConfigurations(
-                                    currentSubtitleConfigurations + MediaItem.SubtitleConfiguration.Builder(state.uri)
-                                        .setMimeType(fileName.toSubtitleMimeType())
-                                        .setLabel(fileName)
-                                        .setLanguage(state.subtitle.languageName)
-                                        .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
-                                        .build()
-                                )
-                                .setMediaMetadata(player.mediaMetadata)
-                                .build()
+                        exoPlayer.setMediaItem(
+                            MediaItem.Builder().setUri(exoPlayer.currentMediaItem?.localConfiguration?.uri)
+                                .setMimeType(exoPlayer.currentMediaItem?.localConfiguration?.mimeType)
+                                .setSubtitleConfigurations(exoSubtitleConfigs + MediaItem.SubtitleConfiguration.Builder(state.uri)
+                                    .setMimeType(fileName.toSubtitleMimeType()).setLabel(fileName)
+                                    .setLanguage(state.subtitle.languageName).setSelectionFlags(C.SELECTION_FLAG_DEFAULT).build())
+                                .setMediaMetadata(exoPlayer.mediaMetadata).build()
                         )
+                        if (player === exoPlayer) {
+                            exoPlayer.seekTo(currentPosition)
+                            exoPlayer.play()
+                        } else {
+                            exoPlayer.prepare()
+                        }
+
+                        // Update CastPlayer
+                        if (castPlayer != null && castPlayer!!.isCastSessionAvailable) {
+                            val castSubtitleConfigs = castPlayer!!.currentMediaItem?.localConfiguration?.subtitleConfigurations?.map {
+                                MediaItem.SubtitleConfiguration.Builder(it.uri)
+                                    .setMimeType(it.mimeType).setLabel(it.label).setLanguage(it.language).setSelectionFlags(0).build()
+                            } ?: listOf()
+                            val proxyUri = if (castProxyServer != null)
+                                Uri.parse("http://${com.streamflixreborn.streamflix.cast.CastProxyServer.getLocalIpAddress()}:${castProxyServer?.listeningPort}/proxy?url=${Uri.encode(state.uri.toString())}")
+                            else state.uri
+                            castPlayer!!.setMediaItem(
+                                MediaItem.Builder().setUri(castPlayer!!.currentMediaItem?.localConfiguration?.uri)
+                                    .setMimeType(castPlayer!!.currentMediaItem?.localConfiguration?.mimeType)
+                                    .setSubtitleConfigurations(castSubtitleConfigs + MediaItem.SubtitleConfiguration.Builder(proxyUri)
+                                        .setMimeType(fileName.toSubtitleMimeType()).setLabel(fileName)
+                                        .setLanguage(state.subtitle.languageName).setSelectionFlags(C.SELECTION_FLAG_DEFAULT).build())
+                                    .setMediaMetadata(castPlayer!!.mediaMetadata).build(),
+                                currentPosition
+                            )
+                            castPlayer!!.prepare()
+                            castPlayer!!.play()
+                        }
+
                         UserPreferences.subtitleName = (state.subtitle.languageName ?: fileName).substringBefore(" ")
-                        player.seekTo(currentPosition)
-                        player.play()
                     }
                     is PlayerViewModel.SubtitleState.FailedDownloadingOpenSubtitle -> {
                         Toast.makeText(requireContext(), "${state.subtitle.subFileName}: ${state.error.message}", Toast.LENGTH_LONG).show()
@@ -537,32 +563,54 @@ class PlayerMobileFragment : Fragment() {
                     is PlayerViewModel.SubtitleState.SuccessDownloadingSubDLSubtitle -> {
                         val fileName = state.uri.getFileName(requireContext()) ?: state.uri.toString()
                         val currentPosition = player.currentPosition
-                        val currentSubtitleConfigurations = player.currentMediaItem?.localConfiguration?.subtitleConfigurations?.map {
+
+                        // Update ExoPlayer
+                        val exoSubtitleConfigs = exoPlayer.currentMediaItem?.localConfiguration?.subtitleConfigurations?.map {
                             MediaItem.SubtitleConfiguration.Builder(it.uri)
-                                .setMimeType(it.mimeType)
-                                .setLabel(it.label)
-                                .setLanguage(it.language)
-                                .setSelectionFlags(0)
-                                .build()
+                                .setMimeType(it.mimeType).setLabel(it.label).setLanguage(it.language).setSelectionFlags(0).build()
                         } ?: listOf()
-                        player.setMediaItem(
-                            MediaItem.Builder()
-                                .setUri(player.currentMediaItem?.localConfiguration?.uri)
-                                .setMimeType(player.currentMediaItem?.localConfiguration?.mimeType)
-                                .setSubtitleConfigurations(
-                                    currentSubtitleConfigurations + MediaItem.SubtitleConfiguration.Builder(state.uri)
+                        exoPlayer.setMediaItem(
+                            MediaItem.Builder().setUri(exoPlayer.currentMediaItem?.localConfiguration?.uri)
+                                .setMimeType(exoPlayer.currentMediaItem?.localConfiguration?.mimeType)
+                                .setSubtitleConfigurations(exoSubtitleConfigs + MediaItem.SubtitleConfiguration.Builder(state.uri)
+                                    .setMimeType(fileName.toSubtitleMimeType())
+                                    .setLabel(state.subtitle.releaseName ?: state.subtitle.name ?: fileName)
+                                    .setLanguage(state.subtitle.lang ?: state.subtitle.language ?: "Unknown")
+                                    .setSelectionFlags(C.SELECTION_FLAG_DEFAULT).build())
+                                .setMediaMetadata(exoPlayer.mediaMetadata).build()
+                        )
+                        if (player === exoPlayer) {
+                            exoPlayer.seekTo(currentPosition)
+                            exoPlayer.play()
+                        } else {
+                            exoPlayer.prepare()
+                        }
+
+                        // Update CastPlayer
+                        if (castPlayer != null && castPlayer!!.isCastSessionAvailable) {
+                            val castSubtitleConfigs = castPlayer!!.currentMediaItem?.localConfiguration?.subtitleConfigurations?.map {
+                                MediaItem.SubtitleConfiguration.Builder(it.uri)
+                                    .setMimeType(it.mimeType).setLabel(it.label).setLanguage(it.language).setSelectionFlags(0).build()
+                            } ?: listOf()
+                            val proxyUri = if (castProxyServer != null)
+                                Uri.parse("http://${com.streamflixreborn.streamflix.cast.CastProxyServer.getLocalIpAddress()}:${castProxyServer?.listeningPort}/proxy?url=${Uri.encode(state.uri.toString())}")
+                            else state.uri
+                            castPlayer!!.setMediaItem(
+                                MediaItem.Builder().setUri(castPlayer!!.currentMediaItem?.localConfiguration?.uri)
+                                    .setMimeType(castPlayer!!.currentMediaItem?.localConfiguration?.mimeType)
+                                    .setSubtitleConfigurations(castSubtitleConfigs + MediaItem.SubtitleConfiguration.Builder(proxyUri)
                                         .setMimeType(fileName.toSubtitleMimeType())
                                         .setLabel(state.subtitle.releaseName ?: state.subtitle.name ?: fileName)
                                         .setLanguage(state.subtitle.lang ?: state.subtitle.language ?: "Unknown")
-                                        .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
-                                        .build()
-                                )
-                                .setMediaMetadata(player.mediaMetadata)
-                                .build()
-                        )
+                                        .setSelectionFlags(C.SELECTION_FLAG_DEFAULT).build())
+                                    .setMediaMetadata(castPlayer!!.mediaMetadata).build(),
+                                currentPosition
+                            )
+                            castPlayer!!.prepare()
+                            castPlayer!!.play()
+                        }
+
                         UserPreferences.subtitleName = (state.subtitle.releaseName ?: state.subtitle.name ?: fileName).substringBefore(" ")
-                        player.seekTo(currentPosition)
-                        player.play()
                     }
                     is PlayerViewModel.SubtitleState.FailedDownloadingSubDLSubtitle -> {
                         Toast.makeText(requireContext(), "${state.subtitle.name}: ${state.error.message}", Toast.LENGTH_LONG).show()
@@ -1207,6 +1255,13 @@ class PlayerMobileFragment : Fragment() {
                 }
             }
 
+            override fun onTrackSelectionParametersChanged(parameters: androidx.media3.common.TrackSelectionParameters) {
+                super.onTrackSelectionParametersChanged(parameters)
+                if (castPlayer != null && castPlayer!!.isCastSessionAvailable) {
+                    syncTracksToCast(parameters)
+                }
+            }
+
             override fun onPlayerError(error: PlaybackException) {
                 super.onPlayerError(error)
                 Log.e("PlayerMobileFragment", "onPlayerError: ", error)
@@ -1684,5 +1739,72 @@ class PlayerMobileFragment : Fragment() {
                 }
             }
         cookieManager.flush()
+    }
+
+    /**
+     * Syncs ExoPlayer track selection to Chromecast using RemoteMediaClient.
+     * CastPlayer's trackSelectionParameters doesn't actually change tracks on the TV —
+     * we must call RemoteMediaClient.selectActiveMediaTracks() with the Cast track IDs.
+     */
+    private fun syncTracksToCast(parameters: androidx.media3.common.TrackSelectionParameters) {
+        val castSession = com.google.android.gms.cast.framework.CastContext.getSharedInstance()
+            ?.sessionManager?.currentCastSession ?: return
+        val remoteMediaClient = castSession.remoteMediaClient ?: return
+        val mediaStatus = remoteMediaClient.mediaStatus ?: return
+
+        val castTracks = mediaStatus.mediaInfo?.mediaTracks ?: return
+
+        // Build a set of track IDs to activate based on ExoPlayer overrides
+        val activeTrackIds = mutableListOf<Long>()
+
+        if (parameters.overrides.isEmpty()) {
+            // No explicit overrides — keep all audio tracks active (let Cast auto-select)
+            return
+        }
+
+        parameters.overrides.values.forEach { exoOverride ->
+            val trackType = exoOverride.mediaTrackGroup.type
+            val exoFormat = exoOverride.mediaTrackGroup.getFormat(exoOverride.trackIndices[0])
+
+            // Find matching Cast track by language and type
+            val castType = when (trackType) {
+                androidx.media3.common.C.TRACK_TYPE_AUDIO -> com.google.android.gms.cast.MediaTrack.TYPE_AUDIO
+                androidx.media3.common.C.TRACK_TYPE_TEXT -> com.google.android.gms.cast.MediaTrack.TYPE_TEXT
+                else -> return@forEach
+            }
+
+            val matchingTrack = castTracks.find { castTrack ->
+                castTrack.type == castType && (
+                    castTrack.language != null && exoFormat.language != null &&
+                    (castTrack.language == exoFormat.language || castTrack.language!!.startsWith(exoFormat.language!!.take(2)))
+                )
+            } ?: castTracks.firstOrNull { it.type == castType }
+
+            if (matchingTrack != null) {
+                activeTrackIds.add(matchingTrack.id)
+                Log.d("PlayerMobileFragment", "Cast: selecting track id=${matchingTrack.id} lang=${matchingTrack.language} type=$castType")
+            }
+        }
+
+        // Also keep currently active tracks of types we are NOT overriding
+        val overriddenTypes = parameters.overrides.values.map { it.mediaTrackGroup.type }.toSet()
+        mediaStatus.activeTrackIds?.forEach { activeId ->
+            val track = castTracks.find { it.id == activeId }
+            val trackType = when (track?.type) {
+                com.google.android.gms.cast.MediaTrack.TYPE_AUDIO -> androidx.media3.common.C.TRACK_TYPE_AUDIO
+                com.google.android.gms.cast.MediaTrack.TYPE_TEXT -> androidx.media3.common.C.TRACK_TYPE_TEXT
+                else -> -1
+            }
+            if (trackType !in overriddenTypes) {
+                activeTrackIds.add(activeId)
+            }
+        }
+
+        if (activeTrackIds.isNotEmpty()) {
+            remoteMediaClient.setActiveMediaTracks(activeTrackIds.toLongArray())
+                .setResultCallback { result ->
+                    Log.d("PlayerMobileFragment", "Cast setActiveMediaTracks result: ${result.status}")
+                }
+        }
     }
 }
